@@ -38,7 +38,7 @@
     <section class="stage" id="stage">
       <canvas id="shape-canvas" aria-label="Fourier reconstruction of today's one-line drawing"></canvas>
       <div class="song-panel" id="song-panel" hidden>
-        <canvas id="song-canvas" aria-label="Sine-wave terms kept at this tier, over time"></canvas>
+        <canvas id="song-canvas" aria-label="Waveform and spectrum of the sine waves kept at this tier"></canvas>
         <div class="player">
           <button class="play" id="play-btn" aria-label="Play">
             <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>
@@ -65,8 +65,6 @@
     <p class="equation" id="equation"></p>
 
     <ol class="tiers" id="tiers" aria-label="Tiers"></ol>
-
-    <p class="hint" id="hint" hidden></p>
 
     <form class="guess" id="guess-form" autocomplete="off">
       <label class="sr-only" for="guess-input">Your guess</label>
@@ -99,23 +97,25 @@
     <form method="dialog" class="dlg">
       <button class="dlg-close" aria-label="Close">×</button>
       <h2>How to play</h2>
-      <p>Each day there is one <b>Shape</b> and one <b>Song</b>. Name them in 6 tries.</p>
+      <p>Each day there is one <b>Shape</b> and one <b>Song</b>. Name them in 5 tries.
+        Every guess or skip unlocks the next tier. The reconstruction is the only clue you get.</p>
       <h3>Shape</h3>
-      <p>Today's picture is drawn with a single closed line. Any closed line can be written as a
+      <p>Today's picture is drawn with a single closed line, inner lines included. Any closed line is a
         <b>Fourier series</b>: a chain of spinning circles, each turning at a whole-number speed,
         with the pen on the tip of the last one.</p>
       <p class="formula">z(t) = Σ c<sub>k</sub> e<sup>ikt</sup></p>
-      <p>You start with the 2 biggest circles. Every guess or skip adds more, so the curve sharpens.</p>
+      <p>Each tier keeps the biggest circles, as many as it takes to reach that tier's error.</p>
       <h3>Song</h3>
-      <p>Every moment of a song is a sum of sine waves. At each tier we keep only the
-        <b>N loudest sine waves</b> at each instant and throw the rest away. 2 sines sound like a ghost.
-        64 sound like the song through a wall.</p>
+      <p>The whole clip is one Fourier series: a sum of pure sine waves, each one held for the
+        <b>entire clip</b>. A few thousand give a drone. You need tens of thousands before the
+        rhythm and the voice come through.</p>
+      <p class="formula">x(t) = Σ A<sub>j</sub> cos(2πf<sub>j</sub>t + φ<sub>j</sub>)</p>
       <h3>% error</h3>
-      <p>How far the reconstruction is from the real thing: the size of everything we left out,
-        as a share of the whole signal.</p>
+      <p>RMS distance between the reconstruction and the real thing at each moment, as a share of the
+        real thing's own size. Drawing nothing (or silence) is 100%. The tiers step down through
+        roughly <b>70% → 50% → 30% → 10% → 1%</b>.</p>
       <div class="legend">
         <span><i class="sw good"></i>correct</span>
-        <span><i class="sw warn"></i>close</span>
         <span><i class="sw bad"></i>wrong</span>
         <span><i class="sw skip"></i>skipped</span>
       </div>

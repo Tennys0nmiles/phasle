@@ -2,4 +2,3 @@
 raw/
 __pycache__/
 site/data/song/*/*.mp3
-site/data/song/*/peaks.bin

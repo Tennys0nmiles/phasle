@@ -116,7 +116,7 @@ svg { display: block; }
 }
 .logo span:nth-child(2) { background: var(--good); color: #fff; }
 .logo span:nth-child(3) { background: var(--accent); color: var(--accent-ink); }
-.logo span:nth-child(5) { background: var(--warn); color: #fff; }
+.logo span:nth-child(5) { background: var(--bad); color: #fff; }
 
 /* ---------- mode tabs ---------- */
 
@@ -184,7 +184,7 @@ main {
 .replay svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 .song-panel { padding: 0 0 14px; }
-#song-canvas { display: block; width: 100%; height: 230px; }
+#song-canvas { display: block; width: 100%; height: 250px; }
 
 .player {
   display: flex; align-items: center; gap: 14px;
@@ -244,11 +244,11 @@ main {
 
 .tiers {
   list-style: none; margin: 16px 0 0; padding: 0;
-  display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px;
+  display: grid; grid-template-columns: repeat(var(--n, 5), 1fr); gap: 6px;
 }
 .tiers li button {
   width: 100%;
-  aspect-ratio: 1 / 1.05;
+  aspect-ratio: 1 / 0.82;
   border-radius: 10px;
   border: 1.5px solid var(--line);
   background: transparent;
@@ -262,19 +262,8 @@ main {
 .tiers li.current button { border-color: var(--ink); border-width: 2px; }
 .tiers li.viewing button { outline: 2px solid var(--accent); outline-offset: 2px; }
 .tiers li.bad button { background: var(--bad); border-color: var(--bad); color: #fff; }
-.tiers li.warn button { background: var(--warn); border-color: var(--warn); color: #fff; }
 .tiers li.skip button { background: var(--skip); border-color: var(--skip); color: #fff; }
 .tiers li.good button { background: var(--good); border-color: var(--good); color: #fff; }
-
-.hint {
-  margin: 14px 0 0;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--ink);
-  font-size: 14px;
-}
-.hint b { color: var(--accent); }
 
 /* ---------- guess ---------- */
 
@@ -320,7 +309,6 @@ main {
   display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 800;
 }
 .history .bad .h-mark { background: var(--bad); }
-.history .warn .h-mark { background: var(--warn); }
 .history .skip .h-mark { background: var(--skip); }
 .history .good .h-mark { background: var(--good); }
 .history .h-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -395,7 +383,7 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
 .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 16px; font-size: 14px; color: var(--muted); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .sw { width: 14px; height: 14px; border-radius: 4px; display: inline-block; }
-.sw.good { background: var(--good); } .sw.warn { background: var(--warn); }
+.sw.good { background: var(--good); }
 .sw.bad { background: var(--bad); } .sw.skip { background: var(--skip); }
 
 .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; text-align: center; margin-top: 10px; }

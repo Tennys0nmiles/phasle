@@ -2,10 +2,8 @@
 
 (() => {
   const $ = (id) => document.getElementById(id);
-  const TIERS = 6;
-  const FULL_TERMS = 256; // circles used for the "full picture" reveal
-  const REV_MS = 5200; // one trip of the pen around the curve
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const V = "phasle:v2"; // bump when tiers change shape, so old saves don't replay onto new puzzles
 
   const store = {
     get(key, fallback) {
@@ -27,7 +25,7 @@
 
   // ---------- theme colours for canvas ----------
 
-  let colors = {};
+  const colors = {};
   function readColors() {
     const cs = getComputedStyle(document.documentElement);
     for (const name of ["ink", "muted", "faint", "line", "trace", "good", "surface", "mono"]) {
@@ -42,17 +40,11 @@
     s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
       .replace(/&/g, " and ").replace(/['’`]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 
-  function judge(text, secret) {
+  // Right or wrong, nothing in between: the reconstruction is the only clue.
+  function isCorrect(text, secret) {
     const g = norm(text);
-    if (!g) return null;
     const has = (phrase) => ` ${g} `.includes(` ${norm(phrase)} `);
-    if (norm(secret.answer) === g || secret.accept.some((a) => norm(a) === g) || secret.contains.some(has)) {
-      return { type: "good" };
-    }
-    for (const c of secret.close) {
-      if (c.any.some(has)) return { type: "warn", note: c.hint };
-    }
-    return { type: "bad" };
+    return norm(secret.answer) === g || secret.accept.some((a) => norm(a) === g) || secret.contains.some(has);
   }
 
   const unwrap = (b64) =>
@@ -78,31 +70,56 @@
 
   // ---------- Fourier series of a closed curve ----------
 
-  // Complex DFT of the sampled curve, terms sorted biggest circle first.
-  // err[n-1] is the % error left after keeping n terms (Parseval: the energy of what's dropped).
+  // In-place radix-2 FFT; length must be a power of two. inverse skips the 1/N.
+  function fft(re, im, inverse = false) {
+    const n = re.length;
+    for (let i = 1, j = 0; i < n; i++) {
+      let bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) {
+        [re[i], re[j]] = [re[j], re[i]];
+        [im[i], im[j]] = [im[j], im[i]];
+      }
+    }
+    for (let len = 2; len <= n; len <<= 1) {
+      const ang = ((inverse ? 2 : -2) * Math.PI) / len;
+      const wr = Math.cos(ang);
+      const wi = Math.sin(ang);
+      const half = len >> 1;
+      for (let i = 0; i < n; i += len) {
+        let cr = 1;
+        let ci = 0;
+        for (let k = 0; k < half; k++) {
+          const a = i + k;
+          const b = a + half;
+          const xr = re[b] * cr - im[b] * ci;
+          const xi = re[b] * ci + im[b] * cr;
+          re[b] = re[a] - xr;
+          im[b] = im[a] - xi;
+          re[a] += xr;
+          im[a] += xi;
+          const t = cr * wr - ci * wi;
+          ci = cr * wi + ci * wr;
+          cr = t;
+        }
+      }
+    }
+  }
+
+  // Terms sorted biggest circle first. err[n-1] is the % error left after keeping n terms:
+  // RMS distance from the true pen at the same t, over the RMS distance of the true pen from
+  // the centre (so drawing nothing is 100%). By Parseval that is sqrt(dropped energy / total).
   function fourier(points) {
     const N = points.length;
-    const cosT = new Float64Array(N);
-    const sinT = new Float64Array(N);
-    for (let i = 0; i < N; i++) {
-      cosT[i] = Math.cos((2 * Math.PI * i) / N);
-      sinT[i] = Math.sin((2 * Math.PI * i) / N);
-    }
-    let c0 = [0, 0];
+    const re = Float64Array.from(points, (p) => p[0]);
+    const im = Float64Array.from(points, (p) => p[1]);
+    fft(re, im);
     const terms = [];
-    for (let k = -N / 2; k < N / 2; k++) {
-      let re = 0;
-      let im = 0;
-      for (let n = 0; n < N; n++) {
-        const idx = (((-k * n) % N) + N) % N;
-        const [x, y] = points[n];
-        re += x * cosT[idx] - y * sinT[idx];
-        im += x * sinT[idx] + y * cosT[idx];
-      }
-      re /= N;
-      im /= N;
-      if (k === 0) c0 = [re, im];
-      else terms.push({ k, re, im, r: Math.hypot(re, im), phase: Math.atan2(im, re) });
+    for (let i = 1; i < N; i++) {
+      const cr = re[i] / N;
+      const ci = im[i] / N;
+      terms.push({ k: i < N / 2 ? i : i - N, re: cr, im: ci, r: Math.hypot(cr, ci), phase: Math.atan2(ci, cr) });
     }
     terms.sort((a, b) => b.r - a.r);
     const total = terms.reduce((s, t) => s + t.r * t.r, 0);
@@ -111,27 +128,31 @@
       kept += t.r * t.r;
       return 100 * Math.sqrt(Math.max(0, 1 - kept / total));
     });
-    return { c0, terms, err };
+    return { N, c0: [re[0] / N, im[0] / N], terms, err };
   }
 
-  function sampleCurve(f, n, samples) {
-    const pts = new Float64Array(samples * 2);
-    for (let s = 0; s < samples; s++) {
-      const t = (2 * Math.PI * s) / samples;
-      let x = f.c0[0];
-      let y = f.c0[1];
-      for (let j = 0; j < n; j++) {
-        const { k, re, im } = f.terms[j];
-        const c = Math.cos(k * t);
-        const si = Math.sin(k * t);
-        x += re * c - im * si;
-        y += re * si + im * c;
-      }
-      pts[2 * s] = x;
-      pts[2 * s + 1] = y;
+  // The curve drawn by the n biggest terms, sampled at the original N points.
+  function curveFor(f, n) {
+    const re = new Float64Array(f.N);
+    const im = new Float64Array(f.N);
+    [re[0], im[0]] = f.c0;
+    for (let j = 0; j < n; j++) {
+      const t = f.terms[j];
+      const idx = (t.k + f.N) % f.N;
+      re[idx] = t.re;
+      im[idx] = t.im;
+    }
+    fft(re, im, true);
+    const pts = new Float64Array(2 * f.N);
+    for (let s = 0; s < f.N; s++) {
+      pts[2 * s] = re[s];
+      pts[2 * s + 1] = im[s];
     }
     return pts;
   }
+
+  // One trip of the pen: quick for a lone circle, slower once there are borders to follow.
+  const lapMs = (n) => Math.min(12000, 3500 + 1200 * Math.log2(Math.max(1, n)));
 
   // ---------- shape view: epicycles tracing the curve ----------
 
@@ -144,7 +165,6 @@
     }
 
     setData(points, f) {
-      this.points = points;
       this.f = f;
       let [x0, x1, y0, y1] = [Infinity, -Infinity, Infinity, -Infinity];
       for (const [x, y] of points) {
@@ -167,7 +187,7 @@
       this.h = h;
       if (this.bounds) {
         const b = this.bounds;
-        const pad = 0.1;
+        const pad = 0.08;
         this.scale = Math.min((w * (1 - 2 * pad)) / (b.x1 - b.x0), (h * (1 - 2 * pad)) / (b.y1 - b.y0));
         this.ox = w / 2 - ((b.x0 + b.x1) / 2) * this.scale;
         this.oy = h / 2 - ((b.y0 + b.y1) / 2) * this.scale;
@@ -175,11 +195,12 @@
       if (this.curve) this.frame(performance.now());
     }
 
-    show(n, { ghost = 0, original = false } = {}) {
+    show(n, { ghost = 0, final = false } = {}) {
       this.n = n;
-      this.curve = sampleCurve(this.f, n, 900);
-      this.ghost = ghost ? sampleCurve(this.f, ghost, 600) : null;
-      this.original = original;
+      this.curve = curveFor(this.f, n);
+      this.ghost = ghost ? curveFor(this.f, ghost) : null;
+      this.final = final;
+      this.lap = lapMs(n);
       this.restart();
     }
 
@@ -201,10 +222,9 @@
       cancelAnimationFrame(this.raf);
     }
 
-    path(pts, upto) {
+    path(pts, count) {
       const { ctx } = this;
       ctx.beginPath();
-      const count = upto ?? pts.length / 2;
       for (let s = 0; s < count; s++) {
         const X = this.ox + pts[2 * s] * this.scale;
         const Y = this.oy + pts[2 * s + 1] * this.scale;
@@ -216,99 +236,81 @@
     frame(now) {
       const { ctx, w, h } = this;
       if (!w || !this.curve) return;
-      const p = reduceMotion ? 1 : (now - this.t0) / REV_MS;
-      const progress = Math.min(1, p);
+      const p = reduceMotion ? 1 : (now - this.t0) / this.lap;
+      const samples = this.curve.length / 2;
       ctx.clearRect(0, 0, w, h);
       ctx.lineJoin = "round";
       ctx.lineCap = "round";
 
-      if (this.original) {
-        ctx.beginPath();
-        this.points.forEach(([x, y], i) => {
-          const X = this.ox + x * this.scale;
-          const Y = this.oy + y * this.scale;
-          if (i === 0) ctx.moveTo(X, Y);
-          else ctx.lineTo(X, Y);
-        });
+      if (this.ghost) {
+        this.path(this.ghost, samples);
         ctx.closePath();
-        ctx.strokeStyle = colors.good;
+        ctx.strokeStyle = colors.faint;
         ctx.globalAlpha = 0.55;
-        ctx.lineWidth = 5;
+        ctx.lineWidth = 1;
         ctx.stroke();
         ctx.globalAlpha = 1;
       }
 
-      if (this.ghost) {
-        this.path(this.ghost);
-        ctx.closePath();
-        ctx.setLineDash([4, 5]);
-        ctx.strokeStyle = colors.faint;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-
-      const samples = this.curve.length / 2;
-      const upto = Math.max(1, Math.floor(progress * samples));
-      this.path(this.curve, upto + (progress >= 1 ? 1 : 0));
-      if (progress >= 1) ctx.closePath();
-      ctx.strokeStyle = colors.trace;
-      ctx.lineWidth = 2.6;
+      const done = p >= 1;
+      this.path(this.curve, done ? samples : Math.max(1, Math.floor(p * samples)));
+      if (done) ctx.closePath();
+      ctx.strokeStyle = this.final ? colors.good : colors.trace;
+      ctx.lineWidth = this.n > 60 ? 1.5 : 2.2;
       ctx.stroke();
 
       // Epicycles: the pen keeps riding the curve after the first lap.
       const t = 2 * Math.PI * (reduceMotion ? 0 : p);
       let x = this.f.c0[0];
       let y = this.f.c0[1];
-      const show = Math.min(this.n, 80);
+      ctx.lineWidth = 1;
       for (let j = 0; j < this.n; j++) {
         const term = this.f.terms[j];
         const ang = term.k * t + term.phase;
         const nx = x + term.r * Math.cos(ang);
         const ny = y + term.r * Math.sin(ang);
-        if (j < show) {
+        const R = term.r * this.scale;
+        if (j < 80 && R > 0.6) {
           const X = this.ox + x * this.scale;
           const Y = this.oy + y * this.scale;
-          const R = term.r * this.scale;
-          if (R > 0.6) {
-            ctx.beginPath();
-            ctx.arc(X, Y, R, 0, 2 * Math.PI);
-            ctx.strokeStyle = colors.muted;
-            ctx.globalAlpha = j === 0 ? 0.28 : 0.22;
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(X, Y);
-            ctx.lineTo(this.ox + nx * this.scale, this.oy + ny * this.scale);
-            ctx.globalAlpha = 0.7;
-            ctx.strokeStyle = colors.ink;
-            ctx.stroke();
-            ctx.globalAlpha = 1;
-          }
+          ctx.beginPath();
+          ctx.arc(X, Y, R, 0, 2 * Math.PI);
+          ctx.strokeStyle = colors.muted;
+          ctx.globalAlpha = 0.22;
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(X, Y);
+          ctx.lineTo(this.ox + nx * this.scale, this.oy + ny * this.scale);
+          ctx.globalAlpha = 0.7;
+          ctx.strokeStyle = colors.ink;
+          ctx.stroke();
+          ctx.globalAlpha = 1;
         }
         x = nx;
         y = ny;
       }
       ctx.beginPath();
-      ctx.arc(this.ox + x * this.scale, this.oy + y * this.scale, 4, 0, 2 * Math.PI);
-      ctx.fillStyle = colors.trace;
+      ctx.arc(this.ox + x * this.scale, this.oy + y * this.scale, 3.5, 0, 2 * Math.PI);
+      ctx.fillStyle = this.final ? colors.good : colors.trace;
       ctx.fill();
     }
   }
 
-  // ---------- song view: kept sine waves over time ----------
+  // ---------- song view: waveform and spectrum of the kept terms ----------
 
   class SongView {
     constructor(canvas) {
       this.cv = canvas;
       this.ctx = canvas.getContext("2d");
-      this.layer = document.createElement("canvas");
       new ResizeObserver(() => this.resize()).observe(canvas);
     }
 
-    setData(meta, peaks) {
-      this.meta = meta;
-      this.peaks = peaks;
+    setData(puzzle, viz) {
+      const bytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      this.duration = puzzle.duration;
+      this.viz = viz;
+      this.env = viz.env.map((b) => new Int8Array(bytes(b).buffer));
+      this.spec = viz.spec.map(bytes);
       this.resize();
     }
 
@@ -320,69 +322,77 @@
       this.dpr = dpr;
       this.w = w;
       this.h = h;
-      this.cv.width = this.layer.width = Math.round(w * dpr);
-      this.cv.height = this.layer.height = Math.round(h * dpr);
-      if (this.k) this.setTerms(this.k);
+      this.cv.width = Math.round(w * dpr);
+      this.cv.height = Math.round(h * dpr);
+      if (this.i != null) this.draw(null);
     }
 
-    yOf(fpos) {
-      return this.h - 22 - fpos * (this.h - 40);
-    }
-
-    setTerms(k) {
-      this.k = k;
-      if (!this.meta || !this.w) return;
-      const { frames, kmax, hop, t0 } = this.meta.viz;
-      const dur = this.meta.duration;
-      const g = this.layer.getContext("2d");
-      g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-      g.clearRect(0, 0, this.w, this.h);
-      g.fillStyle = colors.trace;
-      const bw = Math.max(1.4, (this.w / frames) * 1.3);
-      const bh = k <= 4 ? 3.4 : k <= 16 ? 2.4 : 1.6;
-      for (let j = 0; j < frames; j++) {
-        const x = ((t0 + j * hop) / dur) * this.w;
-        for (let r = 0; r < Math.min(k, kmax); r++) {
-          const o = (j * kmax + r) * 2;
-          const level = this.peaks[o + 1] / 255;
-          if (!level) continue;
-          g.globalAlpha = (k <= 8 ? 0.35 : 0.15) + (k <= 8 ? 0.65 : 0.85) * level ** 1.4;
-          g.fillRect(x - bw / 2, this.yOf(this.peaks[o] / 255) - bh / 2, bw, bh);
-        }
-      }
-      g.globalAlpha = 1;
+    // i indexes the tiers; one past the last tier is the original recording.
+    show(i) {
+      this.i = i;
       this.draw(null);
     }
 
     draw(time) {
       const { ctx, w, h } = this;
-      if (!w || !this.meta) return;
-      const dpr = this.dpr;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (!w || !this.viz || this.i == null) return;
+      ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
+      ctx.font = `10.5px ${colors.mono || "monospace"}`;
+      ctx.textBaseline = "top";
 
-      const { fmin, fmax } = this.meta.viz;
-      ctx.font = `11px ${colors.mono || "monospace"}`;
-      ctx.textBaseline = "bottom";
-      for (const [f, label] of [[100, "100 Hz"], [1000, "1 kHz"], [10000, "10 kHz"]]) {
-        const y = this.yOf(Math.log(f / fmin) / Math.log(fmax / fmin));
-        ctx.fillStyle = colors.line;
-        ctx.fillRect(0, Math.round(y), w, 1);
-        ctx.fillStyle = colors.faint;
-        ctx.fillText(label, 8, y - 2);
+      const specH = 46;
+      const top = 26;
+      const waveH = h - top - specH - 60;
+      const mid = top + waveH / 2;
+      const amp = waveH / 2 / 127;
+      const { cols, bins, fmin, fmax } = this.viz;
+      const env = this.env[this.i];
+      const playX = time == null ? w : (time / this.duration) * w;
+      const bw = w / cols + 0.4;
+
+      ctx.fillStyle = colors.faint;
+      ctx.fillText("waveform", 12, 9);
+      ctx.fillStyle = colors.trace;
+      for (const bright of [true, false]) {
+        ctx.globalAlpha = bright ? 1 : 0.28;
+        for (let c = 0; c < cols; c++) {
+          const x = (c / cols) * w;
+          if (x < playX !== bright) continue;
+          const lo = env[2 * c];
+          const hi = env[2 * c + 1];
+          ctx.fillRect(x, mid - hi * amp, bw, Math.max(1, (hi - lo) * amp));
+        }
+      }
+      ctx.globalAlpha = 1;
+      if (time != null) {
+        ctx.fillStyle = colors.ink;
+        ctx.fillRect(playX, top - 4, 1.5, waveH + 8);
       }
 
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      if (time == null) {
-        ctx.drawImage(this.layer, 0, 0);
-      } else {
-        const px = Math.round((time / this.meta.duration) * w * dpr);
-        ctx.globalAlpha = 0.28;
-        ctx.drawImage(this.layer, 0, 0);
-        ctx.globalAlpha = 1;
-        if (px > 0) ctx.drawImage(this.layer, 0, 0, px, this.layer.height, 0, 0, px, this.layer.height);
-        ctx.fillStyle = colors.ink;
-        ctx.fillRect(px, 0, Math.max(1, dpr * 1.5), this.layer.height);
+      // Spectrum: grey is the whole song, colour is what this tier keeps.
+      const base = h - 30;
+      ctx.fillStyle = colors.faint;
+      ctx.fillText("spectrum of kept terms", 12, base - specH - 16);
+      const full = this.spec[this.spec.length - 1];
+      const kept = this.spec[this.i];
+      const sw = w / bins;
+      for (let b = 0; b < bins; b++) {
+        const x = b * sw;
+        ctx.fillStyle = colors.line;
+        ctx.fillRect(x, base - (full[b] / 255) * specH, sw + 0.3, (full[b] / 255) * specH);
+        if (kept[b]) {
+          ctx.fillStyle = colors.trace;
+          ctx.fillRect(x, base - (kept[b] / 255) * specH, sw + 0.3, (kept[b] / 255) * specH);
+        }
+      }
+      ctx.fillStyle = colors.line;
+      ctx.fillRect(0, base, w, 1);
+      ctx.fillStyle = colors.faint;
+      for (const [f, label] of [[100, "100 Hz"], [1000, "1 kHz"], [10000, "10 kHz"]]) {
+        const x = (Math.log(f / fmin) / Math.log(fmax / fmin)) * w;
+        ctx.fillRect(x, base, 1, 4);
+        ctx.fillText(label, Math.min(x - 14, w - 46), base + 7);
       }
     }
   }
@@ -425,7 +435,6 @@
       };
       src.start();
       this.src = src;
-      this.url = url;
       this.startedAt = this.ctx.currentTime;
       this.duration = buf.duration;
     }
@@ -455,6 +464,8 @@
 
   const pct = (e) => `${e.toFixed(1)}%`;
   const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  const full = (n) => n.toLocaleString("en-US");
+  const compact = (n) => (n < 1000 ? String(n) : n < 10000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n / 1000)}k`);
 
   function shapeEquation(f, n) {
     const parts = f.terms.slice(0, Math.min(n, 2)).map((t) => {
@@ -462,13 +473,12 @@
       const ph = `${t.phase < 0 ? "−" : "+"}${Math.abs(t.phase).toFixed(2)}`;
       return `${t.r.toFixed(2)}e<sup>i(${kt}${ph})</sup>`;
     });
-    const more = n > 2 ? ` + … (${n} terms)` : "";
+    const more = n > 2 ? ` + … (${full(n)} terms)` : "";
     return `z(t) = ${parts.join(" + ")}${more}`;
   }
 
-  function songEquation(k) {
-    return `x(t) = Σ<sub>j=1</sub><sup>${k}</sup> A<sub>j</sub>(t) cos(2πf<sub>j</sub>(t)·t + φ<sub>j</sub>(t))`;
-  }
+  const songEquation = (k) =>
+    `x(t) = Σ<sub>j=1</sub><sup>${full(k)}</sup> A<sub>j</sub> cos(2πf<sub>j</sub>t + φ<sub>j</sub>)`;
 
   // ---------- game ----------
 
@@ -483,7 +493,6 @@
     errCover: $("errbar-cover"),
     equation: $("equation"),
     tiers: $("tiers"),
-    hint: $("hint"),
     form: $("guess-form"),
     input: $("guess-input"),
     skip: $("skip-btn"),
@@ -511,11 +520,14 @@
 
   let data;
   let day;
+  let TIERS;
   let mode = "shape";
   const games = {};
 
-  const MARK = { good: "✓", warn: "~", bad: "✕", skip: "–" };
-  const EMOJI = { good: "🟩", warn: "🟨", bad: "🟥", skip: "⬛" };
+  const MARK = { good: "✓", bad: "✕", skip: "–" };
+  const EMOJI = { good: "🟩", bad: "🟥", skip: "⬛" };
+  const UNIT = { shape: ["circle", "circles"], song: ["sine wave", "sine waves"] };
+  const unit = (m, n) => UNIT[m][n === 1 ? 0 : 1];
 
   function toast(msg, ms = 1800) {
     els.toast.textContent = msg;
@@ -524,29 +536,27 @@
     toast.timer = setTimeout(() => els.toast.classList.remove("show"), ms);
   }
 
+  const puzzleFor = (m) => data[m][day % data[m].length];
+  const saveKey = (m) => `${V}:${m}:${day + 1}:${puzzleFor(m).id}`;
+
   async function loadGame(m) {
     if (games[m]) return games[m];
-    const list = data[m];
-    const puzzle = list[day % list.length];
-    const key = `phasle:${m}:${day + 1}:${puzzle.id}`;
+    const puzzle = puzzleFor(m);
     const g = {
       mode: m,
       puzzle,
-      key,
+      key: saveKey(m),
       secret: unwrap(puzzle.secret),
-      state: store.get(key, { guesses: [], done: false, won: false, counted: false }),
+      state: store.get(saveKey(m), { guesses: [], done: false, won: false, counted: false }),
+      tiers: puzzle.tiers,
       view: null,
     };
     if (m === "shape") {
-      const pts = (await (await fetch(puzzle.file)).json()).points;
-      g.points = pts;
-      g.f = fourier(pts);
-      g.tiers = puzzle.tiers;
-      g.errors = puzzle.tiers.map((n) => g.f.err[n - 1]);
+      g.points = (await (await fetch(puzzle.file)).json()).points;
+      g.f = fourier(g.points);
+      g.errors = g.tiers.map((n) => g.f.err[n - 1]);
     } else {
-      const buf = await (await fetch(`${puzzle.dir}/peaks.bin`)).arrayBuffer();
-      g.peaks = new Uint8Array(buf);
-      g.tiers = puzzle.tiers;
+      g.viz = await (await fetch(`${puzzle.dir}/viz.json`)).json();
       g.errors = puzzle.errors;
     }
     games[m] = g;
@@ -560,10 +570,12 @@
     store.set(g.key, g.state);
   }
 
+  const emptyStats = () => ({ played: 0, won: 0, streak: 0, maxStreak: 0, last: null, dist: Array(TIERS).fill(0) });
+
   function countResult(g) {
     if (g.state.counted) return;
-    const key = `phasle:stats:${g.mode}`;
-    const s = store.get(key, { played: 0, won: 0, streak: 0, maxStreak: 0, last: null, dist: [0, 0, 0, 0, 0, 0] });
+    const key = `${V}:stats:${g.mode}`;
+    const s = store.get(key, emptyStats());
     s.played += 1;
     if (g.state.won) {
       s.won += 1;
@@ -579,35 +591,32 @@
     save(g);
   }
 
-  // What the stage shows: a tier index 0..5, or "orig" for the full picture / original song.
+  const songUrl = (g, view) => `${g.puzzle.dir}/${view === "orig" ? "full" : `t${view + 1}`}.mp3`;
+
+  // What the stage shows: a tier index, or "orig" for the full picture / original song.
   function setView(g, view, { autoplay = false } = {}) {
     g.view = view;
     const isOrig = view === "orig";
     if (g.mode === "shape") {
-      const n = isOrig ? Math.min(FULL_TERMS, g.f.terms.length) : g.tiers[view];
-      const ghost = !isOrig && view > 0 ? g.tiers[view - 1] : 0;
-      shapeView.show(n, { ghost, original: isOrig });
-      const err = isOrig ? g.f.err[n - 1] : g.errors[view];
-      readout(isOrig ? "Full picture" : `Tier ${view + 1}/${TIERS}`, `${n} circles`, err);
+      const n = isOrig ? g.f.terms.length : g.tiers[view];
+      shapeView.show(n, { ghost: !isOrig && view > 0 ? g.tiers[view - 1] : 0, final: isOrig });
+      readout(isOrig ? "Full picture" : `Tier ${view + 1}/${TIERS}`, `${full(n)} ${unit("shape", n)}`, isOrig ? 0 : g.errors[view]);
       els.equation.innerHTML = shapeEquation(g.f, n);
     } else {
       player.stop();
-      const k = isOrig ? g.puzzle.viz.kmax : g.tiers[view];
-      songView.setTerms(k);
-      readout(isOrig ? "Original" : `Tier ${view + 1}/${TIERS}`, isOrig ? "every sine wave" : `${k} sines at a time`, isOrig ? 0 : g.errors[view]);
-      els.equation.innerHTML = isOrig ? "x(t) = the real recording" : songEquation(k);
-      els.playerTitle.textContent = isOrig ? `${g.secret.answer} · original` : `Tier ${view + 1} · ${k} sine waves`;
+      const k = isOrig ? g.puzzle.terms_total : g.tiers[view];
+      songView.show(isOrig ? TIERS : view);
+      readout(isOrig ? "Original" : `Tier ${view + 1}/${TIERS}`, `${full(k)} ${unit("song", k)}`, isOrig ? 0 : g.errors[view]);
+      els.equation.innerHTML = isOrig ? `x(t) = the real recording (${full(k)} terms)` : songEquation(k);
+      els.playerTitle.textContent = isOrig ? `${g.secret.answer} · original` : `Tier ${view + 1} · ${full(k)} sine waves`;
       els.playerTime.textContent = `0:00 / ${mmss(g.puzzle.duration)}`;
       els.scrub.style.width = "0";
       els.play.classList.remove("playing");
-      const url = songUrl(g, view);
-      player.prefetch(url);
+      player.prefetch(songUrl(g, view));
       if (autoplay) togglePlay();
     }
     renderTiers(g);
   }
-
-  const songUrl = (g, view) => `${g.puzzle.dir}/${view === "orig" ? "full" : `t${view + 1}`}.mp3`;
 
   function readout(tier, terms, err) {
     els.rTier.textContent = tier;
@@ -619,6 +628,7 @@
   function renderTiers(g) {
     const cur = currentTier(g);
     const upto = revealedUpTo(g);
+    els.tiers.style.setProperty("--n", TIERS);
     els.tiers.replaceChildren(
       ...g.tiers.map((n, i) => {
         const li = document.createElement("li");
@@ -629,8 +639,8 @@
         const b = document.createElement("button");
         b.type = "button";
         b.disabled = i > upto;
-        b.innerHTML = `<span class="t-n">${n}</span><span class="t-e">${i <= upto ? pct(g.errors[i]) : "?"}</span>`;
-        b.setAttribute("aria-label", `Tier ${i + 1}: ${n} terms${i <= upto ? `, ${pct(g.errors[i])} error` : ", locked"}`);
+        b.innerHTML = `<span class="t-n">${compact(n)}</span><span class="t-e">${i <= upto ? pct(g.errors[i]) : `~${data.targets[i]}%`}</span>`;
+        b.setAttribute("aria-label", `Tier ${i + 1}: ${full(n)} terms${i <= upto ? `, ${pct(g.errors[i])} error` : ", locked"}`);
         b.addEventListener("click", () => setView(g, i));
         li.append(b);
         return li;
@@ -639,7 +649,7 @@
   }
 
   function render(g) {
-    const { state, puzzle } = g;
+    const { state } = g;
     const modeName = g.mode === "shape" ? "Shape" : "Song";
     els.label.textContent = `${modeName} #${day + 1}`;
     els.date.textContent = dayLabel(data.epoch, day);
@@ -652,42 +662,33 @@
     );
     els.input.placeholder = g.mode === "shape" ? "What is the drawing?" : "Name the song";
 
-    // history
     els.history.replaceChildren(
       ...state.guesses.map((guess, i) => {
         const li = document.createElement("li");
         li.className = guess.type;
-        const text = guess.type === "skip" ? `Skipped tier ${i + 1}` : guess.text;
-        li.innerHTML = `<span class="h-mark">${MARK[guess.type]}</span><span class="h-text"></span>${guess.note ? `<span class="h-note"></span>` : ""}`;
-        li.querySelector(".h-text").textContent = text;
-        if (guess.note) li.querySelector(".h-note").textContent = guess.note;
+        li.innerHTML = `<span class="h-mark">${MARK[guess.type]}</span><span class="h-text"></span>`;
+        li.querySelector(".h-text").textContent = guess.type === "skip" ? `Skipped tier ${i + 1}` : guess.text;
         return li;
       }),
     );
 
-    const cur = currentTier(g);
-    const hintOn = puzzle.hint && (state.done || cur + 1 >= puzzle.hint.tier);
-    els.hint.hidden = !hintOn;
-    if (hintOn) els.hint.innerHTML = `<b>Hint</b> · ${puzzle.hint.text}`;
-
     els.form.hidden = state.done;
     if (!state.done) {
+      const cur = currentTier(g);
       const more = cur < TIERS - 1 ? g.tiers[cur + 1] - g.tiers[cur] : 0;
-      const unit = g.mode === "shape" ? (more === 1 ? "circle" : "circles") : more === 1 ? "sine" : "sines";
-      els.skipNote.textContent = more ? `(+${more} ${unit})` : "(give up)";
+      els.skipNote.textContent = more ? `(+${compact(more)} ${g.mode === "shape" ? unit("shape", more) : "sines"})` : "(give up)";
     }
 
     els.result.hidden = !state.done;
     if (state.done) {
       const n = state.guesses.length;
+      const at = state.won ? n - 1 : TIERS - 1;
+      const where = `${full(g.tiers[at])} ${unit(g.mode, g.tiers[at])}, ${pct(g.errors[at])} error`;
       els.result.classList.toggle("won", state.won);
       els.kicker.textContent = state.won ? `Got it in ${n}/${TIERS}` : "Out of tiers";
-      els.answer.textContent = g.mode === "song" ? `${g.secret.answer}` : g.secret.answer;
-      const at = state.won ? n - 1 : TIERS - 1;
-      const unit = g.mode === "shape" ? "circles" : "sine waves at a time";
-      els.detail.textContent = g.mode === "song"
-        ? `${g.secret.artist} · ${state.won ? `named at ${g.tiers[at]} ${unit}, ${pct(g.errors[at])} error` : `last tier: ${g.tiers[at]} ${unit}`}`
-        : state.won ? `Named at ${g.tiers[at]} ${unit}, ${pct(g.errors[at])} error` : `Last tier: ${g.tiers[at]} ${unit}, ${pct(g.errors[at])} error`;
+      els.answer.textContent = g.secret.answer;
+      const said = state.won ? `Named at ${where}` : `Last tier: ${where}`;
+      els.detail.textContent = g.mode === "song" ? `${g.secret.artist} · ${said[0].toLowerCase()}${said.slice(1)}` : said;
       els.original.textContent = g.mode === "shape" ? "Full picture" : "Play original";
       els.credit.textContent = g.secret.credit || "";
     }
@@ -695,7 +696,7 @@
     for (const tab of document.querySelectorAll(".modes button")) {
       const m = tab.dataset.mode;
       tab.setAttribute("aria-selected", String(m === g.mode));
-      const done = games[m]?.state.done ?? store.get(`phasle:${m}:${day + 1}:${data[m][day % data[m].length].id}`, {}).done;
+      const done = games[m]?.state.done ?? store.get(saveKey(m), {}).done;
       let mark = tab.querySelector(".done-mark");
       if (done && !mark) {
         mark = document.createElement("span");
@@ -732,8 +733,7 @@
     const g = games[mode];
     if (!g || g.state.done) return;
     const text = els.input.value.trim();
-    const verdict = judge(text, g.secret);
-    if (!verdict) return;
+    if (!norm(text)) return;
     if (g.state.guesses.some((x) => x.text && norm(x.text) === norm(text))) {
       els.form.classList.remove("shake");
       void els.form.offsetWidth;
@@ -742,9 +742,9 @@
       return;
     }
     els.input.value = "";
-    if (verdict.type === "warn") toast(verdict.note);
-    else if (verdict.type === "bad") toast(g.state.guesses.length + 1 < TIERS ? "Not it. More terms coming…" : "Not it");
-    advance(g, { type: verdict.type, text, ...(verdict.note ? { note: verdict.note } : {}) });
+    const right = isCorrect(text, g.secret);
+    if (!right) toast(g.state.guesses.length + 1 < TIERS ? "Not it. More terms coming…" : "Not it");
+    advance(g, { type: right ? "good" : "bad", text });
   });
 
   els.skip.addEventListener("click", () => {
@@ -811,9 +811,8 @@
     const n = state.guesses.length;
     const icon = g.mode === "shape" ? "🌀" : "🎵";
     const squares = Array.from({ length: TIERS }, (_, i) => (state.guesses[i] ? EMOJI[state.guesses[i].type] : "⬜")).join("");
-    const at = state.won ? n - 1 : TIERS - 1;
-    const unit = g.mode === "shape" ? "circles" : "sines";
-    const tail = state.won ? `${g.tiers[at]} ${unit} · ${pct(g.errors[at])} error` : "stumped";
+    const at = n - 1;
+    const tail = state.won ? `${full(g.tiers[at])} ${unit(g.mode, g.tiers[at])} · ${pct(g.errors[at])} error` : "stumped";
     return `Phasle #${day + 1} ${icon} ${g.mode === "shape" ? "Shape" : "Song"} ${state.won ? n : "X"}/${TIERS}\n${squares}\n${tail}`;
   }
 
@@ -857,7 +856,7 @@
   }
 
   $("stats-btn").addEventListener("click", () => {
-    const s = store.get(`phasle:stats:${mode}`, { played: 0, won: 0, streak: 0, maxStreak: 0, dist: [0, 0, 0, 0, 0, 0] });
+    const s = store.get(`${V}:stats:${mode}`, emptyStats());
     $("stats-title").textContent = `${mode === "shape" ? "Shape" : "Song"} statistics`;
     const cells = [
       [s.played, "Played"],
@@ -886,7 +885,7 @@
     const g = await loadGame(m);
     if (mode !== m) return;
     render(g);
-    if (m === "song") songView.setData(g.puzzle, g.peaks);
+    if (m === "song") songView.setData(g.puzzle, g.viz);
     else shapeView.setData(g.points, g.f);
     setView(g, g.view ?? (g.state.done ? "orig" : currentTier(g)));
   }
@@ -910,6 +909,7 @@
   (async () => {
     data = await (await fetch("data/puzzles.json")).json();
     day = dayIndex(data.epoch);
+    TIERS = data.targets.length;
     const fromHash = location.hash.slice(1);
     const start = ["shape", "song"].includes(fromHash) ? fromHash : store.get("phasle:mode", "shape");
     await switchMode(start);
