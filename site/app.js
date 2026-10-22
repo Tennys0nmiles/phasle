@@ -3,7 +3,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const V = "phasle:v2"; // bump when tiers change shape, so old saves don't replay onto new puzzles
+  const V = "phasle:v3"; // bump when tiers change shape, so old saves don't replay onto new puzzles
 
   const store = {
     get(key, fallback) {
@@ -520,7 +520,6 @@
 
   let data;
   let day;
-  let TIERS;
   let mode = "shape";
   const games = {};
 
@@ -563,19 +562,19 @@
     return g;
   }
 
-  const currentTier = (g) => (g.state.done ? (g.state.won ? g.state.guesses.length - 1 : TIERS - 1) : g.state.guesses.length);
-  const revealedUpTo = (g) => (g.state.done ? TIERS - 1 : g.state.guesses.length);
+  const currentTier = (g) => (g.state.done ? (g.state.won ? g.state.guesses.length - 1 : g.tiers.length - 1) : g.state.guesses.length);
+  const revealedUpTo = (g) => (g.state.done ? g.tiers.length - 1 : g.state.guesses.length);
 
   function save(g) {
     store.set(g.key, g.state);
   }
 
-  const emptyStats = () => ({ played: 0, won: 0, streak: 0, maxStreak: 0, last: null, dist: Array(TIERS).fill(0) });
+  const emptyStats = (m) => ({ played: 0, won: 0, streak: 0, maxStreak: 0, last: null, dist: Array(data.targets[m].length).fill(0) });
 
   function countResult(g) {
     if (g.state.counted) return;
     const key = `${V}:stats:${g.mode}`;
-    const s = store.get(key, emptyStats());
+    const s = store.get(key, emptyStats(g.mode));
     s.played += 1;
     if (g.state.won) {
       s.won += 1;
@@ -600,13 +599,13 @@
     if (g.mode === "shape") {
       const n = isOrig ? g.f.terms.length : g.tiers[view];
       shapeView.show(n, { ghost: !isOrig && view > 0 ? g.tiers[view - 1] : 0, final: isOrig });
-      readout(isOrig ? "Full picture" : `Tier ${view + 1}/${TIERS}`, `${full(n)} ${unit("shape", n)}`, isOrig ? 0 : g.errors[view]);
+      readout(isOrig ? "Full picture" : `Tier ${view + 1}/${g.tiers.length}`, `${full(n)} ${unit("shape", n)}`, isOrig ? 0 : g.errors[view]);
       els.equation.innerHTML = shapeEquation(g.f, n);
     } else {
       player.stop();
       const k = isOrig ? g.puzzle.terms_total : g.tiers[view];
-      songView.show(isOrig ? TIERS : view);
-      readout(isOrig ? "Original" : `Tier ${view + 1}/${TIERS}`, `${full(k)} ${unit("song", k)}`, isOrig ? 0 : g.errors[view]);
+      songView.show(isOrig ? g.tiers.length : view);
+      readout(isOrig ? "Original" : `Tier ${view + 1}/${g.tiers.length}`, `${full(k)} ${unit("song", k)}`, isOrig ? 0 : g.errors[view]);
       els.equation.innerHTML = isOrig ? `x(t) = the real recording (${full(k)} terms)` : songEquation(k);
       els.playerTitle.textContent = isOrig ? `${g.secret.answer} · original` : `Tier ${view + 1} · ${full(k)} sine waves`;
       els.playerTime.textContent = `0:00 / ${mmss(g.puzzle.duration)}`;
@@ -628,7 +627,7 @@
   function renderTiers(g) {
     const cur = currentTier(g);
     const upto = revealedUpTo(g);
-    els.tiers.style.setProperty("--n", TIERS);
+    els.tiers.style.setProperty("--n", g.tiers.length);
     els.tiers.replaceChildren(
       ...g.tiers.map((n, i) => {
         const li = document.createElement("li");
@@ -639,7 +638,7 @@
         const b = document.createElement("button");
         b.type = "button";
         b.disabled = i > upto;
-        b.innerHTML = `<span class="t-n">${compact(n)}</span><span class="t-e">${i <= upto ? pct(g.errors[i]) : `~${data.targets[i]}%`}</span>`;
+        b.innerHTML = `<span class="t-n">${compact(n)}</span><span class="t-e">${i <= upto ? pct(g.errors[i]) : `~${data.targets[g.mode][i]}%`}</span>`;
         b.setAttribute("aria-label", `Tier ${i + 1}: ${full(n)} terms${i <= upto ? `, ${pct(g.errors[i])} error` : ", locked"}`);
         b.addEventListener("click", () => setView(g, i));
         li.append(b);
@@ -675,17 +674,17 @@
     els.form.hidden = state.done;
     if (!state.done) {
       const cur = currentTier(g);
-      const more = cur < TIERS - 1 ? g.tiers[cur + 1] - g.tiers[cur] : 0;
+      const more = cur < g.tiers.length - 1 ? g.tiers[cur + 1] - g.tiers[cur] : 0;
       els.skipNote.textContent = more ? `(+${compact(more)} ${g.mode === "shape" ? unit("shape", more) : "sines"})` : "(give up)";
     }
 
     els.result.hidden = !state.done;
     if (state.done) {
       const n = state.guesses.length;
-      const at = state.won ? n - 1 : TIERS - 1;
+      const at = state.won ? n - 1 : g.tiers.length - 1;
       const where = `${full(g.tiers[at])} ${unit(g.mode, g.tiers[at])}, ${pct(g.errors[at])} error`;
       els.result.classList.toggle("won", state.won);
-      els.kicker.textContent = state.won ? `Got it in ${n}/${TIERS}` : "Out of tiers";
+      els.kicker.textContent = state.won ? `Got it in ${n}/${g.tiers.length}` : "Out of tiers";
       els.answer.textContent = g.secret.answer;
       const said = state.won ? `Named at ${where}` : `Last tier: ${where}`;
       els.detail.textContent = g.mode === "song" ? `${g.secret.artist} · ${said[0].toLowerCase()}${said.slice(1)}` : said;
@@ -713,7 +712,7 @@
     if (entry.type === "good") {
       state.done = true;
       state.won = true;
-    } else if (state.guesses.length >= TIERS) {
+    } else if (state.guesses.length >= g.tiers.length) {
       state.done = true;
     }
     save(g);
@@ -743,7 +742,7 @@
     }
     els.input.value = "";
     const right = isCorrect(text, g.secret);
-    if (!right) toast(g.state.guesses.length + 1 < TIERS ? "Not it. More terms coming…" : "Not it");
+    if (!right) toast(g.state.guesses.length + 1 < g.tiers.length ? "Not it. More terms coming…" : "Not it");
     advance(g, { type: right ? "good" : "bad", text });
   });
 
@@ -810,10 +809,10 @@
     const { state } = g;
     const n = state.guesses.length;
     const icon = g.mode === "shape" ? "🌀" : "🎵";
-    const squares = Array.from({ length: TIERS }, (_, i) => (state.guesses[i] ? EMOJI[state.guesses[i].type] : "⬜")).join("");
+    const squares = Array.from({ length: g.tiers.length }, (_, i) => (state.guesses[i] ? EMOJI[state.guesses[i].type] : "⬜")).join("");
     const at = n - 1;
     const tail = state.won ? `${full(g.tiers[at])} ${unit(g.mode, g.tiers[at])} · ${pct(g.errors[at])} error` : "stumped";
-    return `Phasle #${day + 1} ${icon} ${g.mode === "shape" ? "Shape" : "Song"} ${state.won ? n : "X"}/${TIERS}\n${squares}\n${tail}`;
+    return `Phasle #${day + 1} ${icon} ${g.mode === "shape" ? "Shape" : "Song"} ${state.won ? n : "X"}/${g.tiers.length}\n${squares}\n${tail}`;
   }
 
   els.share.addEventListener("click", async () => {
@@ -856,7 +855,7 @@
   }
 
   $("stats-btn").addEventListener("click", () => {
-    const s = store.get(`${V}:stats:${mode}`, emptyStats());
+    const s = store.get(`${V}:stats:${mode}`, emptyStats(mode));
     $("stats-title").textContent = `${mode === "shape" ? "Shape" : "Song"} statistics`;
     const cells = [
       [s.played, "Played"],
@@ -909,7 +908,6 @@
   (async () => {
     data = await (await fetch("data/puzzles.json")).json();
     day = dayIndex(data.epoch);
-    TIERS = data.targets.length;
     const fromHash = location.hash.slice(1);
     const start = ["shape", "song"].includes(fromHash) ? fromHash : store.get("phasle:mode", "shape");
     await switchMode(start);

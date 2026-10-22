@@ -2,12 +2,12 @@
 
 Every term is a single sine wave that lasts the entire clip: x(t) = sum A_j cos(2 pi f_j t + phi_j),
 with f_j on the clip's 1/T frequency grid. Each tier keeps the N strongest terms, where N is
-the smallest count whose relative L2 error is at or below the tier's target. Few terms give
+the count whose relative L2 error lands closest to the tier's target. Few terms give
 a constant drone; rhythm only appears once enough nearby frequencies interfere.
 
 Usage:
   .venv/bin/python -I tools/make_song.py raw/song.wav site/data/song/s001 \
-      --start 18.9 --end 38.6 --errors 70,50,30,10,1
+      --start 18.9 --end 38.6 --errors 90,77,63,50,30,10,1
 """
 import argparse
 import base64
@@ -73,7 +73,7 @@ def main():
     ap.add_argument("out_dir")
     ap.add_argument("--start", type=float, required=True)
     ap.add_argument("--end", type=float, required=True)
-    ap.add_argument("--errors", default="70,50,30,10,1", help="target %% error per tier")
+    ap.add_argument("--errors", default="90,77,63,50,30,10,1", help="target %% error per tier")
     args = ap.parse_args()
     targets = [float(t) for t in args.errors.split(",")]
     out = Path(args.out_dir)
@@ -99,7 +99,7 @@ def main():
     rms = np.sqrt(np.mean(x**2))
     tiers, errors, envs, specs = [], [], [], []
     for i, target in enumerate(targets, 1):
-        k = int(np.argmax(left <= target / 100)) + 1
+        k = int(np.argmin(np.abs(left - target / 100))) + 1
         keep = np.zeros_like(X)
         keep[order[:k]] = X[order[:k]]
         y = np.fft.irfft(keep, n)
@@ -116,7 +116,8 @@ def main():
     envs.append(envelope(played))
     specs.append(spectrum(amp, freqs, top))
 
-    meta = {"duration": round(n / FS, 3), "terms_total": len(X), "tiers": tiers, "errors": errors}
+    meta = {"duration": round(n / FS, 3), "terms_total": len(X), "targets": [int(t) if t.is_integer() else t for t in targets],
+            "tiers": tiers, "errors": errors}
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
     viz = {"cols": ENV_COLS, "bins": SPEC_BINS, "fmin": SPEC_FMIN, "fmax": SPEC_FMAX,
            "env": [b64(e) for e in envs], "spec": [b64(s) for s in specs]}

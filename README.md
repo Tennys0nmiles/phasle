@@ -9,8 +9,9 @@ A daily guessing game in the style of Wordle/Heardle, built on Fourier series.
 - **Song**: the whole clip is one Fourier series. Every term is a single sine wave
   held for the entire clip, and each tier keeps the strongest ones.
 
-Every tier is set by a target error, the same in both modes: **70% → 50% → 30% →
-10% → 1%**. A tier's term count is the fewest terms that reach its target. Error is
+Every tier is set by a target error (`targets` in `tools/puzzles.src.json`):
+Shape **50 → 30 → 10 → 1%** (4 tries), Song **90 → 77 → 63 → 50 → 30 → 10 → 1%**
+(7 tries). A tier's term count is the one whose error lands closest to its target. Error is
 the RMS distance between reconstruction and original at each moment, over the RMS
 size of the original (its distance from the centre, or the waveform itself), so
 drawing nothing or silence is 100%. By Parseval that's
@@ -18,7 +19,7 @@ drawing nothing or silence is 100%. By Parseval that's
 
 Guesses are right or wrong. There are no answer-specific replies or hints.
 
-Five tries per mode per day. Progress, stats and streaks live in `localStorage`.
+Progress, stats and streaks live in `localStorage`.
 
 ## Run
 
@@ -42,7 +43,7 @@ cycling through each list.
     # Song: the chorus of Hips Don't Lie
     yt-dlp -f bestaudio -x --audio-format wav -o "raw/hips_dont_lie.%(ext)s" https://www.youtube.com/watch?v=DUT5rEU6pqM
     .venv/bin/python -I tools/make_song.py raw/hips_dont_lie.wav site/data/song/s001 \
-      --start 18.9 --end 38.6 --errors 70,50,30,10,1
+      --start 18.9 --end 38.6 --errors 90,77,63,50,30,10,1
 
     .venv/bin/python -I tools/build_puzzles.py
 

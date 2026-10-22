@@ -248,7 +248,7 @@ main {
 }
 .tiers li button {
   width: 100%;
-  aspect-ratio: 1 / 0.82;
+  height: 58px;
   border-radius: 10px;
   border: 1.5px solid var(--line);
   background: transparent;
@@ -256,7 +256,7 @@ main {
   font-variant-numeric: tabular-nums;
   padding: 0;
 }
-.tiers .t-n { font-weight: 750; font-size: 17px; line-height: 1; }
+.tiers .t-n { font-weight: 750; font-size: clamp(13px, 3.9vw, 17px); line-height: 1; }
 .tiers .t-e { font: 10.5px var(--mono); opacity: .8; }
 .tiers li button:disabled { cursor: default; color: var(--faint); border-style: dashed; }
 .tiers li.current button { border-color: var(--ink); border-width: 2px; }

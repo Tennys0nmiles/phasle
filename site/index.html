@@ -97,7 +97,7 @@
     <form method="dialog" class="dlg">
       <button class="dlg-close" aria-label="Close">×</button>
       <h2>How to play</h2>
-      <p>Each day there is one <b>Shape</b> and one <b>Song</b>. Name them in 5 tries.
+      <p>Each day there is one <b>Shape</b> (4 tries) and one <b>Song</b> (7 tries).
         Every guess or skip unlocks the next tier. The reconstruction is the only clue you get.</p>
       <h3>Shape</h3>
       <p>Today's picture is drawn with a single closed line, inner lines included. Any closed line is a
@@ -107,13 +107,13 @@
       <p>Each tier keeps the biggest circles, as many as it takes to reach that tier's error.</p>
       <h3>Song</h3>
       <p>The whole clip is one Fourier series: a sum of pure sine waves, each one held for the
-        <b>entire clip</b>. A few thousand give a drone. You need tens of thousands before the
+        <b>entire clip</b>. A few hundred give a drone. It takes tens of thousands before the
         rhythm and the voice come through.</p>
       <p class="formula">x(t) = Σ A<sub>j</sub> cos(2πf<sub>j</sub>t + φ<sub>j</sub>)</p>
       <h3>% error</h3>
       <p>RMS distance between the reconstruction and the real thing at each moment, as a share of the
-        real thing's own size. Drawing nothing (or silence) is 100%. The tiers step down through
-        roughly <b>70% → 50% → 30% → 10% → 1%</b>.</p>
+        real thing's own size. Drawing nothing (or silence) is 100%. Shape tiers step through
+        <b>50 → 30 → 10 → 1%</b>, song tiers through <b>90 → 77 → 63 → 50 → 30 → 10 → 1%</b>.</p>
       <div class="legend">
         <span><i class="sw good"></i>correct</span>
         <span><i class="sw bad"></i>wrong</span>
