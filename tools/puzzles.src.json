@@ -1,0 +1,92 @@
+{
+  "epoch": "2026-10-22",
+  "shape": [
+    {
+      "id": "d001",
+      "file": "data/draw/d001.json",
+      "tiers": [2, 3, 5, 8, 12, 20],
+      "hint": {"tier": 4, "text": "It's a place on Earth"},
+      "secret": {
+        "answer": "Africa",
+        "accept": ["africa", "african continent", "the african continent", "continent of africa",
+                   "map of africa", "africa map", "africa continent", "the continent of africa"],
+        "contains": [],
+        "close": [
+          {"any": ["south africa", "egypt", "nigeria", "kenya", "sahara", "madagascar", "morocco",
+                   "ethiopia", "somalia", "libya", "algeria", "sudan", "congo", "tanzania", "ghana"],
+           "hint": "Warm: it's bigger than that"},
+          {"any": ["south america", "asia", "europe", "australia", "north america", "antarctica",
+                   "eurasia", "oceania"],
+           "hint": "Right idea, wrong continent"}
+        ],
+        "credit": "Coastline from Natural Earth (public domain), 1024 points"
+      }
+    }
+  ],
+  "song": [
+    {
+      "id": "s001",
+      "dir": "data/song/s001",
+      "hint": {"tier": 4, "text": "Released 2006 · Latin pop"},
+      "secret": {
+        "answer": "Hips Don't Lie",
+        "artist": "Shakira ft. Wyclef Jean",
+        "accept": [],
+        "contains": ["hips dont lie", "hips don t lie", "hips do not lie"],
+        "close": [
+          {"any": ["shakira", "wyclef", "wyclef jean"], "hint": "Right artist, wrong song"}
+        ],
+        "credit": "Chorus, 0:19–0:38"
+      }
+    }
+  ],
+  "suggest": {
+    "shape": ["Africa", "Antarctica", "Asia", "Australia", "Europe", "North America", "South America",
+      "Greenland", "Madagascar", "Iceland", "Ireland", "Great Britain", "Japan", "Italy", "France",
+      "Spain", "India", "China", "Brazil", "Chile", "Argentina", "Mexico", "Canada", "Russia",
+      "United States", "Alaska", "Texas", "Florida", "California", "Egypt", "South Africa",
+      "Sri Lanka", "New Zealand", "Cuba", "Norway", "Sweden", "Turkey", "Iran", "Saudi Arabia",
+      "Korea", "Vietnam", "Indonesia", "Borneo", "Sicily", "Cyprus", "Tasmania",
+      "Dragonfly", "Butterfly", "Bird", "Fish", "Cat", "Dog", "Horse", "Elephant", "Rabbit",
+      "Snail", "Swan", "Duck", "Dolphin", "Whale", "Shark", "Turtle", "Frog", "Lizard", "Snake",
+      "Spider", "Bee", "Octopus", "Seahorse", "Squirrel", "Owl", "Penguin", "Giraffe", "Dinosaur",
+      "Dragon", "Hand", "Face", "Heart", "Star", "Moon", "Leaf", "Tree", "Flower", "Mushroom",
+      "Apple", "Pear", "Guitar", "Violin", "Key", "Teapot", "Boot", "Shoe", "Hat", "Bell",
+      "Anchor", "Light bulb", "Rocket", "Airplane", "Car", "Bicycle", "Boat", "House", "Umbrella"],
+    "song": ["Hips Don't Lie — Shakira", "Whenever, Wherever — Shakira", "Waka Waka — Shakira",
+      "She Wolf — Shakira", "Beautiful Liar — Beyoncé & Shakira", "Crazy in Love — Beyoncé",
+      "Single Ladies — Beyoncé", "Halo — Beyoncé", "Umbrella — Rihanna", "SOS — Rihanna",
+      "Don't Stop the Music — Rihanna", "Pon de Replay — Rihanna", "Promiscuous — Nelly Furtado",
+      "Maneater — Nelly Furtado", "Say It Right — Nelly Furtado", "SexyBack — Justin Timberlake",
+      "Cry Me a River — Justin Timberlake", "Toxic — Britney Spears", "Womanizer — Britney Spears",
+      "Hollaback Girl — Gwen Stefani", "Rich Girl — Gwen Stefani", "Buttons — The Pussycat Dolls",
+      "Don't Cha — The Pussycat Dolls", "Gasolina — Daddy Yankee", "La Bamba — Ritchie Valens",
+      "Livin' la Vida Loca — Ricky Martin", "Bailamos — Enrique Iglesias", "Hero — Enrique Iglesias",
+      "Bailando — Enrique Iglesias", "Despacito — Luis Fonsi", "Macarena — Los del Río",
+      "Suavemente — Elvis Crespo", "On the Floor — Jennifer Lopez", "Let's Get Loud — Jennifer Lopez",
+      "Get Right — Jennifer Lopez", "Smooth — Santana ft. Rob Thomas", "Maria Maria — Santana",
+      "Ready or Not — Fugees", "Killing Me Softly — Fugees", "Gone Till November — Wyclef Jean",
+      "Yeah! — Usher", "Hey Ya! — OutKast", "In da Club — 50 Cent", "Get Low — Lil Jon",
+      "Lose Yourself — Eminem", "Without Me — Eminem", "Crazy — Gnarls Barkley",
+      "Mr. Brightside — The Killers", "Seven Nation Army — The White Stripes",
+      "Since U Been Gone — Kelly Clarkson", "Bad Day — Daniel Powter", "Irreplaceable — Beyoncé",
+      "Unwritten — Natasha Bedingfield", "You're Beautiful — James Blunt",
+      "Chasing Cars — Snow Patrol", "Ice Ice Baby — Vanilla Ice", "Hey There Delilah — Plain White T's",
+      "Shake It Off — Taylor Swift", "Love Story — Taylor Swift", "Bad Romance — Lady Gaga",
+      "Poker Face — Lady Gaga", "Just Dance — Lady Gaga", "Firework — Katy Perry",
+      "I Kissed a Girl — Katy Perry", "Hot n Cold — Katy Perry", "TiK ToK — Kesha",
+      "Party in the U.S.A. — Miley Cyrus", "I Gotta Feeling — The Black Eyed Peas",
+      "Where Is the Love? — The Black Eyed Peas", "My Humps — The Black Eyed Peas",
+      "Dilemma — Nelly ft. Kelly Rowland", "Hot in Herre — Nelly", "Low — Flo Rida",
+      "Party Rock Anthem — LMFAO", "Gangnam Style — PSY", "Uptown Funk — Mark Ronson ft. Bruno Mars",
+      "Billie Jean — Michael Jackson", "Thriller — Michael Jackson", "Beat It — Michael Jackson",
+      "Bohemian Rhapsody — Queen", "Don't Stop Me Now — Queen", "Africa — Toto",
+      "Dancing Queen — ABBA", "Wannabe — Spice Girls", "...Baby One More Time — Britney Spears",
+      "Rolling in the Deep — Adele", "Hello — Adele", "Someone Like You — Adele",
+      "Shape of You — Ed Sheeran", "Blinding Lights — The Weeknd", "Happy — Pharrell Williams",
+      "Get Lucky — Daft Punk", "One More Time — Daft Punk", "Smells Like Teen Spirit — Nirvana",
+      "Sweet Child o' Mine — Guns N' Roses", "Livin' on a Prayer — Bon Jovi",
+      "Rapper's Delight — The Sugarhill Gang", "Stayin' Alive — Bee Gees",
+      "Never Gonna Give You Up — Rick Astley", "Take On Me — a-ha"]
+  }
+}
